@@ -1,11 +1,13 @@
 import imageio.v2 as imageio
 from sklearn.cluster import KMeans
 from sklearn.datasets import load_iris
+from PIL import Image
 
 import matplotlib.pyplot as plt
 import os
 import numpy as np
 from sklearn.decomposition import PCA
+from itertools import combinations
 
 
 # Сохраняем фактическое распределение данных для сравнения результата
@@ -107,6 +109,7 @@ def custom_kmeans(data, k, max_iters=100):
 
 def run_custom_kmeans(data, k, max_iters=100):
     images = []
+    original_data = load_iris().data if data.shape[1] == 2 else data
 
     for centroids, clusters, iteration, is_last_step in custom_kmeans(data, k, max_iters):
         print(f"Шаг {iteration}: Генерируем plot...")
@@ -118,9 +121,82 @@ def run_custom_kmeans(data, k, max_iters=100):
         plt.pause(1)
 
         if is_last_step:
+            final_clusters = clusters
             plt.show()
+
+            if original_data is not None:
+                plot_all_projections(original_data, final_clusters,
+                                     "Финальные кластеры по всем признакам")
         else:
             plt.close()
+
+
+# Если нужно склеить все изображения-графиков в одно
+def combine_images_from_folder(folder_path, output_filename="combined_plot.png",
+                               cols=3, figsize=(15, 10), dpi=100):
+
+    image_files = [f for f in os.listdir(folder_path)
+                   if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff'))]
+    image_files.sort()
+
+    if not image_files:
+        print("В указанной папке нет изображений.")
+        return
+    rows = (len(image_files) // cols) + (1 if len(image_files) % cols else 0)
+
+    fig, axes = plt.subplots(rows, cols, figsize=figsize, dpi=dpi)
+    if rows == 1 and cols == 1:
+        axes = np.array([[axes]])
+    elif rows == 1 or cols == 1:
+        axes = axes.reshape(rows, cols)
+
+    for i, (ax, img_file) in enumerate(zip(axes.flatten(), image_files)):
+        img_path = os.path.join(folder_path, img_file)
+        img = Image.open(img_path)
+        ax.imshow(img)
+        ax.set_title(os.path.splitext(img_file)[0])
+        ax.axis('off')
+
+    for j in range(i + 1, rows * cols):
+        axes.flatten()[j].axis('off')
+
+    plt.tight_layout()
+    plt.savefig(output_filename, bbox_inches='tight')
+    plt.close()
+    print(f"Изображения успешно объединены и сохранены в {output_filename}")
+
+
+def plot_all_projections(data, labels, title="Кластеры по всем парам признаков"):
+    feature_names = ['Длина чашелистика', 'Ширина чашелистика',
+                     'Длина лепестка', 'Ширина лепестка']
+
+    feature_pairs = list(combinations(range(data.shape[1]), 2))
+    n_pairs = len(feature_pairs)
+
+    n_cols = 3
+    n_rows = (n_pairs + n_cols - 1) // n_cols
+
+    plt.figure(figsize=(15, 5 * n_rows))
+    plt.suptitle(title, fontsize=16)
+    scatter = None
+
+    for plot_num, (i, j) in enumerate(feature_pairs, 1):
+        plt.subplot(n_rows, n_cols, plot_num)
+        scatter = plt.scatter(data[:, j], data[:, i], c=labels, cmap='tab10', s=20)
+        plt.xlabel(feature_names[j])
+        plt.ylabel(feature_names[i])
+        plt.grid(True)
+
+    if scatter is not None and len(np.unique(labels)) > 1:
+        legend = plt.figlegend(*scatter.legend_elements(),
+                               title='Кластеры',
+                               loc='lower right',
+                               bbox_to_anchor=(1, 0),
+                               ncol=min(10, len(np.unique(labels))))
+        plt.setp(legend.get_texts(), fontsize='small')
+
+    plt.tight_layout()
+    plt.show()
 
 
 def main():
@@ -134,11 +210,13 @@ def main():
     save_real_cluster_plot(X_reduced, y, 'iris_real.png')
 
     print('1. Определяем оптимальное количество кластеров')
-    #optimal_k = find_k_optimal(X_reduced)
+    # optimal_k = find_k_optimal(X_reduced)
     optimal_k = 3
 
     print('2. Алгоритм')
     run_custom_kmeans(X_reduced, optimal_k)
+
+    combine_images_from_folder("kmeans_images", "kmeans_steps_combined.png", cols=4)
 
 
 if __name__ == '__main__':
