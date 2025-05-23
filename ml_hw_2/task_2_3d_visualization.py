@@ -8,31 +8,27 @@ from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.decomposition import PCA
-from sklearn.linear_model import Lasso
+from sklearn.linear_model import Lasso, LinearRegression
 from sklearn.metrics import mean_squared_error
 import os
 
 
-# загрузка данных и подготовка целевой переменной
 def load_and_prepare_data(file_path="AmesHousing.csv"):
     df = pd.read_csv(file_path)
-    df = df.drop(columns=["Order", "PID"], errors="ignore")
-
+    df = df.drop(columns=['Order', 'PID', 'Mo Sold', 'Yr Sold'], errors="ignore")
     y = df["SalePrice"]
     X = df.drop(columns=["SalePrice"])
-
     return X, y
 
 
-# определение категориальных и числовых столбцов
 def identify_columns_types(X):
     categorical_cols = X.select_dtypes(include=["object"]).columns.tolist()
+    categorical_cols = []
     numerical_cols = X.select_dtypes(exclude=["object"]).columns.tolist()
     return categorical_cols, numerical_cols
 
 
-# удаления сильно скоррелированных признаков
-def remove_highly_correlated_features(X, numerical_cols, threshold=0.9):
+def remove_highly_correlated_features(X, numerical_cols, threshold=0.8):
     corr_matrix = X[numerical_cols].corr().abs()
     upper_triangle = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
     high_corr_features = [
@@ -46,10 +42,9 @@ def remove_highly_correlated_features(X, numerical_cols, threshold=0.9):
     return X, numerical_cols
 
 
-# преобразователь значений:
 def create_preprocessor(categorical_cols, numerical_cols):
     numeric_transformer = Pipeline(steps=[
-        ("imputer", SimpleImputer(strategy="median")),
+        ("imputer", SimpleImputer(strategy="mean")),
         ("scaler", StandardScaler())
     ])
 
@@ -59,14 +54,13 @@ def create_preprocessor(categorical_cols, numerical_cols):
     ])
 
     preprocessor = ColumnTransformer(transformers=[
-        ("num", numeric_transformer, numerical_cols),
-        ("cat", categorical_transformer, categorical_cols)
+        ("num", numeric_transformer, numerical_cols)
+        , ("cat", categorical_transformer, categorical_cols)
     ])
 
     return preprocessor
 
 
-# 3D видуализация данных + сохранение
 def plot_3d_pca(X_pca, y, title="3D-визуализация данных", save_path=None):
     fig = plt.figure(figsize=(10, 7))
     ax = fig.add_subplot(111, projection="3d")
@@ -83,21 +77,17 @@ def plot_3d_pca(X_pca, y, title="3D-визуализация данных", save
     plt.close(fig)
 
 
-# оценивание модель лассо с разными значениями альфа и вычисление rmse
-def evaluate_lasso_model(X_train, X_test, y_train, y_test, alphas=np.logspace(-1, 2, 30)):
+def evaluate_lasso_model(X_train, X_test, y_train, y_test, alphas=np.logspace(-4, 3, 10)):
     rmse_values = []
-
     for alpha in alphas:
-        model = Lasso(alpha=alpha, max_iter=5000, tol=0.01)
+        model = Lasso(alpha=alpha, max_iter=10000)
         model.fit(X_train, y_train)
         y_pred = model.predict(X_test)
         rmse = np.sqrt(mean_squared_error(y_test, y_pred))
         rmse_values.append(rmse)
-
     return alphas, rmse_values
 
 
-# график зависимости rmse и альфа
 def plot_rmse_vs_alpha(alphas, rmse_values, title="Зависимость RMSE от alpha (Lasso)", save_path=None):
     plt.figure(figsize=(10, 6))
     plt.plot(alphas, rmse_values, marker="o")
@@ -112,19 +102,21 @@ def plot_rmse_vs_alpha(alphas, rmse_values, title="Зависимость RMSE �
     plt.show()
 
 
-# имена признаков после преобразования
 def get_feature_names(preprocessor, categorical_cols, numerical_cols):
-    encoded_feature_names = (
-            numerical_cols +
-            preprocessor.named_transformers_["cat"]
-            .named_steps["onehot"]
-            .get_feature_names_out(categorical_cols).tolist()
-    )
-    return encoded_feature_names
+    feature_names = []
+
+    feature_names.extend(numerical_cols)
+
+    if categorical_cols:
+        cat_transformer = preprocessor.named_transformers_["cat"]
+        ohe = cat_transformer.named_steps["onehot"]
+        cat_feature_names = ohe.get_feature_names_out(categorical_cols)
+        feature_names.extend(cat_feature_names)
+
+    return feature_names
 
 
 def print_model_results(best_alpha, min_rmse, top_feature):
-    """Выводит результаты моделирования."""
     print(f"Лучшая alpha: {best_alpha}")
     print(f"Минимальный RMSE: {min_rmse:.2f}")
     print("Признак с наибольшим влиянием:")
@@ -146,6 +138,14 @@ def main():
 
     X, numerical_cols = remove_highly_correlated_features(X, numerical_cols)
 
+    if numerical_cols:
+        plt.figure(figsize=(12, 10))
+        corr_matrix = X[numerical_cols].corr()
+        sns.heatmap(corr_matrix, cmap="coolwarm", center=0, annot=False, fmt=".2f")
+        plt.title("Ковариационная матрица числовых признаков (после удаления)")
+        plt.tight_layout()
+        plt.show()
+
     preprocessor = create_preprocessor(categorical_cols, numerical_cols)
     X_processed = preprocessor.fit_transform(X)
 
@@ -157,6 +157,12 @@ def main():
         X_processed, y, test_size=0.2, random_state=42
     )
 
+    model = LinearRegression()
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+    print(f'RMSE (Linear Regression): {rmse:.2f}')
+
     alphas, rmse_values = evaluate_lasso_model(X_train, X_test, y_train, y_test)
     plot_rmse_vs_alpha(alphas, rmse_values, save_path="plots/rmse_vs_alpha.png")
 
@@ -166,9 +172,14 @@ def main():
 
     encoded_feature_names = get_feature_names(preprocessor, categorical_cols, numerical_cols)
     coef = pd.Series(final_model.coef_, index=encoded_feature_names)
-    top_feature = coef.abs().sort_values(ascending=False).head(1)
+    top_n = 10
+    important_features = coef[coef != 0].abs().sort_values(ascending=False).head(top_n)
 
-    print_model_results(best_alpha, min(rmse_values), top_feature)
+    print(f"Лучшая alpha: {best_alpha}")
+    print(f"Минимальный RMSE: {min(rmse_values):.2f}")
+    print(f"\nТоп-{top_n} признаков по абсолютной важности:")
+    for i, (feature, value) in enumerate(important_features.items(), 1):
+        print(f"{i}. {feature}: {value:.4f}")
 
 
 if __name__ == "__main__":
