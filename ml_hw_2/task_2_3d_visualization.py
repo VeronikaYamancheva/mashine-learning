@@ -22,7 +22,7 @@ def load_and_prepare_data(file_path="AmesHousing.csv"):
 
 
 def identify_columns_types(X):
-    categorical_cols = X.select_dtypes(include=["object"]).columns.tolist()
+    #categorical_cols = X.select_dtypes(include=["object"]).columns.tolist()
     categorical_cols = []
     numerical_cols = X.select_dtypes(exclude=["object"]).columns.tolist()
     return categorical_cols, numerical_cols
@@ -48,14 +48,14 @@ def create_preprocessor(categorical_cols, numerical_cols):
         ("scaler", StandardScaler())
     ])
 
-    categorical_transformer = Pipeline(steps=[
-        ("imputer", SimpleImputer(strategy="most_frequent")),
-        ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False))
-    ])
+    #categorical_transformer = Pipeline(steps=[
+    #    ("imputer", SimpleImputer(strategy="most_frequent")),
+     #   ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False))
+    #])
 
     preprocessor = ColumnTransformer(transformers=[
         ("num", numeric_transformer, numerical_cols)
-        , ("cat", categorical_transformer, categorical_cols)
+     #   , ("cat", categorical_transformer, categorical_cols)
     ])
 
     return preprocessor
